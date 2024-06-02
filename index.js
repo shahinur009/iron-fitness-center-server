@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const port = process.env.PORT || 4009;
@@ -28,6 +29,14 @@ async function run() {
         //database collections
         const classCollection = client.db('ironFitness').collection('class')
         const trainerCollection = client.db('ironFitness').collection('trainer')
+        // jwt token:
+        app.post('/jwt', async (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+                expiresIn: '7d'
+            })
+            res.send({ token });
+        })
 
         // collect all class from database
         app.get('/class', async (req, res) => {
