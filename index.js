@@ -3,12 +3,16 @@ const app = express();
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 4009;
 
 
 // middleware
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:5173'
+    ]
+}));
 app.use(express.json())
 
 
@@ -28,7 +32,7 @@ async function run() {
     try {
         //database collections
         const classCollection = client.db('ironFitness').collection('class')
-        const trainerCollection = client.db('ironFitness').collection('trainer')
+        const trainerCollection = client.db('ironFitness').collection('trainers')
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
         // jwt token:
@@ -51,13 +55,40 @@ async function run() {
         })
 
         // collect all class from database
-        app.get('/class', async (req, res) => {
+        app.get('/classes', async (req, res) => {
             const result = await classCollection.find().toArray();
             res.send(result)
         })
+        // collect single class data from database
+        app.get('/class/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await classCollection.findOne(query);
+            res.send(result)
+        })
+        // 
+        app.get('/trainers/class/:id', async (req, res) => {
+            id = req.params.id;
+            const query = { classes: id }
+            const result = await trainerCollection.find(query).toArray();
+            res.send(result)
+        })
         // collect all trainer data from database
-        app.get('/trainer', async (req, res) => {
+        app.get('/trainers', async (req, res) => {
             const result = await trainerCollection.find().toArray();
+            res.send(result)
+        })
+        // collect trainer details  data from database
+        app.get('/trainer/:id', async (req, res) => {
+            id = req.params.id;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid trainer ID format' });
+            }
+            const query = {_id: new ObjectId(id) }
+            const result = await trainerCollection.findOne(query);
+            if (!result) {
+                return res.status(404).send({ error: 'Trainer not found' });
+            }
             res.send(result)
         })
 
