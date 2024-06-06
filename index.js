@@ -3,7 +3,7 @@ const app = express();
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId, Timestamp } = require('mongodb');
 const port = process.env.PORT || 4009;
 
 
@@ -35,6 +35,7 @@ async function run() {
         const trainerCollection = client.db('ironFitness').collection('trainers')
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
+        const usersCollection = client.db('ironFitness').collection('users')
         // jwt token:
         app.post('/jwt', async (req, res) => {
             const user = req.body;
@@ -42,6 +43,36 @@ async function run() {
                 expiresIn: '7d'
             })
             res.send({ token });
+        })
+
+        //save user
+        app.put('/user', async (req, res) => {
+            const user = req.body;
+            const query = { email: use?.email }
+            // check if user already in database
+            const isExist = await usersCollection.findOne(query);
+            if (isExist) {
+                if (user.status === 'Requested') {
+                    // if existing user try to change his role
+                    const result = await usersCollection.updateOne(query, {
+                        $set: { status: user?.status },
+                    })
+                    return res.send(result)
+                } else {
+                    // if existing user login again
+                    return res.send(isExist)
+                }
+            }
+            // save user for the first time
+            const options = { upsert: true }
+            const updateDoc = {
+                $set: {
+                    ...user,
+                    Timestamp: Date.now(),
+                },
+            }
+            const result = await usersCollection.updateOne(query, updateDoc, options)
+            res.send(result)
         })
         // Forum API 
         app.get('/forum', async (req, res) => {
@@ -84,7 +115,7 @@ async function run() {
             if (!ObjectId.isValid(id)) {
                 return res.status(400).send({ error: 'Invalid trainer ID format' });
             }
-            const query = {_id: new ObjectId(id) }
+            const query = { _id: new ObjectId(id) }
             const result = await trainerCollection.findOne(query);
             if (!result) {
                 return res.status(404).send({ error: 'Trainer not found' });
