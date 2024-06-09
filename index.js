@@ -139,6 +139,13 @@ async function run() {
             const result = await classCollection.find().toArray();
             res.send(result)
         })
+        // add class route
+        app.post("/classes", async (req, res) => {
+            const Data = req.body;
+            // console.log(classData);
+            const result = await classCollection.insertOne(Data);
+            res.send(result);
+        });
         // collect single class data from database
         app.get('/class/:id', async (req, res) => {
             const id = req.params.id;
