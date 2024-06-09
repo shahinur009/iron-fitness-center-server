@@ -53,9 +53,11 @@ async function run() {
         const classCollection = client.db('ironFitness').collection('class')
         const trainerCollection = client.db('ironFitness').collection('trainers')
         const slotsCollection = client.db('ironFitness').collection('slots')
+        // const TrainerSlotCollection = client.db('ironFitness').collection('trainer-slots')
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
         const usersCollection = client.db('ironFitness').collection('users')
+        const subscribeCollection = client.db('ironFitness').collection('subscribers')
         // jwt token:
         app.post('/jwt', async (req, res) => {
             const user = req.body;
@@ -77,12 +79,24 @@ async function run() {
                 res.status(500).send(err)
             }
         })
-        // save slots data to db
+
+        // save become trainer slots data to db
         app.post('/slots', async (req, res) => {
             const slot = req.body;
             const result = await slotsCollection.insertOne(slot)
             res.send(result);
         })
+        // get slot data form db
+        app.get("/slot/:email", async (req, res) => {
+            try {
+                const email = req.params.email;
+                const query = { email: email }
+                const result = await slotsCollection.findOne(query);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch trainer slots data", error });
+            }
+        });
 
         //save user data in database
         app.put('/user', async (req, res) => {
@@ -133,17 +147,36 @@ async function run() {
             const result = await reviewCollection.find().toArray();
             res.send(result);
         })
+        // Save subscribe data in DB
+        app.post("/subscribe", async (req, res) => {
+            const subscriptionData = req.body;
+            try {
+                const result = await subscribeCollection.insertOne(subscriptionData);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to save subscription data", error });
+            }
+        });
+
+        // get all all subscribers data from DB
+        app.get("/subscribers", async (req, res) => {
+            try {
+                const result = await subscribeCollection.find().toArray();
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch subscribers data", error });
+            }
+        });
 
         // collect all class from database
         app.get('/classes', async (req, res) => {
             const result = await classCollection.find().toArray();
             res.send(result)
         })
-        // add class route
-        app.post("/classes", async (req, res) => {
-            const Data = req.body;
-            // console.log(classData);
-            const result = await classCollection.insertOne(Data);
+        // save add class data from database 
+        app.post("/class", async (req, res) => {
+            const ClassData = req.body;
+            const result = await classCollection.insertOne(ClassData);
             res.send(result);
         });
         // collect single class data from database
