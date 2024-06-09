@@ -1,22 +1,21 @@
 const express = require('express');
-const app = express();
-require('dotenv').config()
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const app = express();
+require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId, Timestamp } = require('mongodb');
 const port = process.env.PORT || 4009;
 
 
 // middleware
-const corsOptions = {
-    origin: ['http://localhost:5173', 'http://localhost:5174'],
-    credentials: true,
-    optionSuccessStatus: 200,
-}
-app.use(cors(corsOptions))
+// const corsOptions = {
+//     origin: ['http://localhost:5173', 'http://localhost:5174'],
+//     credentials: true,
+// }
+app.use(cors())
 
 app.use(express.json())
-app.use(cookieParser())
+// app.use(cookieParser())
 
 // Verify Token Middleware
 const verifyToken = async (req, res, next) => {
@@ -53,22 +52,15 @@ async function run() {
         //database collections
         const classCollection = client.db('ironFitness').collection('class')
         const trainerCollection = client.db('ironFitness').collection('trainers')
+        const slotsCollection = client.db('ironFitness').collection('slots')
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
         const usersCollection = client.db('ironFitness').collection('users')
         // jwt token:
         app.post('/jwt', async (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-                expiresIn: '365d'
-            })
-            res
-                .cookie('token', token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-                })
-                .send({ success: true })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '365d' });
+            res.send({ token })
         })
         // Logout
         app.get('/logout', async (req, res) => {
@@ -85,11 +77,17 @@ async function run() {
                 res.status(500).send(err)
             }
         })
+        // save slots data to db
+        app.post('/slots', async (req, res) => {
+            const slot = req.body;
+            const result = await slotsCollection.insertOne(slot)
+            res.send(result);
+        })
 
         //save user data in database
         app.put('/user', async (req, res) => {
             const user = req.body;
-            const query = { email: use?.email }
+            const query = { email: user?.email }
             // check if user already in database
             const isExist = await usersCollection.findOne(query);
             if (isExist) {
@@ -107,13 +105,18 @@ async function run() {
             // save user for the first time
             const options = { upsert: true }
             const updateDoc = {
-                $set: {
-                    ...user,
-                    Timestamp: Date.now(),
-                },
+                ...user,
+                Timestamp: Date.now()
+
             }
-            const result = await usersCollection.updateOne(query, updateDoc, options)
+            const result = await usersCollection.insertOne(updateDoc, options)
             res.send(result)
+        })
+        // get all user email from db.
+        app.get('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const result = await usersCollection.findOne({ email });
+            res.send(result);
         })
         // get all users data from db
         app.get('/users', async (req, res) => {
