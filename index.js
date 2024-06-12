@@ -86,6 +86,12 @@ async function run() {
             const result = await slotsCollection.insertOne(slot)
             res.send(result);
         })
+        //Trainer slots 
+        app.post('/trainers', async (req, res) => {
+            const slot = req.body;
+            const result = await trainerCollection.insertOne(slot)
+            res.send(result);
+        })
         // get slot data form db
         app.get("/slot/:email", async (req, res) => {
             try {
@@ -97,6 +103,13 @@ async function run() {
                 res.status(500).send({ message: "Failed to fetch trainer slots data", error });
             }
         });
+        //slot data delete 
+        app.delete('/slot/:email', async (req, res) => {
+            const email = req.params.email
+            const query = { email: email }
+            const result = await slotsCollection.deleteOne(query)
+            res.send(result)
+        })
 
         //save user data in database
         app.put('/user', async (req, res) => {
