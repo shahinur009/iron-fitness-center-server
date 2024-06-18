@@ -111,6 +111,7 @@ async function run() {
                 res.status(500).send({ message: "Failed to fetch trainer slots data", error });
             }
         });
+<<<<<<< HEAD
         app.post("/slot/make-trainer/:email", async (req, res) => {
             try {
                 if (req.body.make_trainer) {
@@ -127,6 +128,15 @@ async function run() {
                     const trainerResult = await usersCollection.updateOne(trainerQuery, {
                         $set: { role: "trainer" },
                     });
+=======
+        //slot data delete 
+        app.delete('/slot/:email', async (req, res) => {
+            const email = req.params.email
+            const query = { email: email }
+            const result = await slotsCollection.deleteOne(query)
+            res.send(result)
+        })
+>>>>>>> a27302fe6fc41f9082bb3a1541a3d249f4217317
 
 
                     res.send(trainerResult);
