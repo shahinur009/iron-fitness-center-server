@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const app = express();
 require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId, Timestamp } = require('mongodb');
-const port = process.env.PORT || 4009;
+const port = process.env.PORT || 5000;
 
 
 // middleware
@@ -57,6 +57,8 @@ async function run() {
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
         const usersCollection = client.db('ironFitness').collection('users')
+        const paymentCollection = client.db('ironFitness').collection('payment')
+
         const subscribeCollection = client.db('ironFitness').collection('subscribers')
         // jwt token:
         app.post('/jwt', async (req, res) => {
@@ -80,10 +82,22 @@ async function run() {
             }
         })
 
+        app.get('/slots', async (req, res) => {
+            const result = await slotsCollection.find({
+                status: 'pending'
+            }).toArray();
+            res.send(result);
+        })
         // save become trainer slots data to db
         app.post('/slots', async (req, res) => {
             const slot = req.body;
             const result = await slotsCollection.insertOne(slot)
+            res.send(result);
+        })
+        //Trainer slots 
+        app.post('/trainers', async (req, res) => {
+            const slot = req.body;
+            const result = await trainerCollection.insertOne(slot)
             res.send(result);
         })
         // get slot data form db
@@ -97,7 +111,60 @@ async function run() {
                 res.status(500).send({ message: "Failed to fetch trainer slots data", error });
             }
         });
+        app.post("/slot/make-trainer/:email", async (req, res) => {
+            try {
+                if (req.body.make_trainer) {
+                    const email = req.params.email;
+                    const query = { email: email }
+                    const tResult = await usersCollection.findOne(query);
+                    console.log(email)
+                    // const result = await slotsCollection.updateOne(query, {
+                    //     $set: { status: "approved" },
+                    // });
+                    // user role to trainer
+                    const trainerQuery = { email: email }
+                    console.log('shahin')
+                    const trainerResult = await usersCollection.updateOne(trainerQuery, {
+                        $set: { role: "trainer" },
+                    });
 
+
+                    res.send(trainerResult);
+                } else {
+
+                }
+
+
+
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch trainer slots data", error });
+            }
+        });
+        //slot data delete 
+        app.delete('/slot/:email', async (req, res) => {
+            const email = req.params.email
+            const query = { email: email }
+            const result = await slotsCollection.deleteOne(query)
+            res.send(result)
+        })
+
+        app.post('/users/trainer/demote/:email', async (req, res) => {
+            const trainer = await trainerCollection.findOne({
+                email: req.params.email
+            });
+            if (!trainer) {
+                return res.status(404).send({ error: 'Trainer not found' });
+            }
+            const result = await usersCollection.updateOne({
+                email: req.params.email
+            }, {
+                $set: { role: 'member' },
+            })
+            res.json({
+                success: true,
+                message: 'demoted successfully'
+            }).status(200)
+        })
         //save user data in database
         app.put('/user', async (req, res) => {
             const user = req.body;
@@ -135,6 +202,12 @@ async function run() {
         // get all users data from db
         app.get('/users', async (req, res) => {
             const result = await usersCollection.find().toArray()
+            res.send(result)
+        })
+        app.get('/users/trainer', async (req, res) => {
+            const result = await usersCollection.find({
+                role: 'trainer'
+            }).toArray()
             res.send(result)
         })
         // Forum API 
@@ -179,6 +252,47 @@ async function run() {
             const result = await classCollection.insertOne(ClassData);
             res.send(result);
         });
+        app.post("/pay-now", async (req, res) => {
+            const { trainer_info, trainer_id, slot_name, package_name, price, user_id, email, otherInfo } = req.body;
+
+            // Validate data (add more validation as needed)
+            if (!trainer_info || !trainer_id || !slot_name || !package_name || !price || !email) {
+                return res.status(422).json({ error: 'Missing required fields' });
+            }
+
+            // Create a new payment document
+            const newPayment = {
+                trainer_info,
+                trainer_id,
+                slot_name,
+                package_name,
+                price,
+                user_id,
+                email,
+                created_at: new Date(),
+            };
+
+            // Insert the payment document into the collection
+            const result = await paymentCollection.insertOne(newPayment);
+
+            res.json({
+                'message': "Payment successful",
+                'data': result,
+                'result': true
+            }).status(200);
+        });
+        app.get("/payment-list", async (req, res) => {
+
+            // Insert the payment document into the collection
+            const result = await paymentCollection.find().sort({
+                crated_at: 1
+            }).toArray();
+
+            res.json({
+                'data': result,
+                'result': true
+            }).status(200);
+        });
         // collect single class data from database
         app.get('/class/:id', async (req, res) => {
             const id = req.params.id;
@@ -209,8 +323,19 @@ async function run() {
             if (!result) {
                 return res.status(404).send({ error: 'Trainer not found' });
             }
-            res.send(result)
+            let classList = [];
+            if (result.classes && Array.isArray(result.classes)) {
+                classList = await Promise.all(
+                    result.classes.map(async (slot) => {
+                        return await classCollection.findOne({ _id: new ObjectId(slot) });
+                    })
+                );
+            }
+
+            result.classLists = classList;
+            res.send(result);
         })
+
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
