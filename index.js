@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const app = express();
+const bodyParser = require('body-parser');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId, Timestamp } = require('mongodb');
 const port = process.env.PORT || 5000;
@@ -18,20 +19,46 @@ app.use(express.json())
 // app.use(cookieParser())
 
 // Verify Token Middleware
-const verifyToken = async (req, res, next) => {
-    const token = req.cookies?.token
-    console.log(token)
-    if (!token) {
-        return res.status(401).send({ message: 'unauthorized access' })
+const verifiedToken = (req, res, next) => {
+    if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'forbidden access' });
     }
+    const token = req.headers.authorization.split(' ')[1];
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-            console.log(err)
-            return res.status(401).send({ message: 'unauthorized access' })
+            return res.status(401).send({ message: 'forbidden access' });
         }
-        req.user = decoded
-        next()
-    })
+        req.decoded = decoded;
+        next();
+    });
+};
+
+
+
+// verify admin
+const verifyAdmin = async (req, res, next) => {
+    console.log('shahin')
+    const user = req.user
+    const query = { email: user?.email }
+    const result = await usersCollection.findOne(query)
+    console.log(result?.role)
+    if (!result || result?.role !== 'admin')
+        return res.status(401).send({ message: 'unauthorized access!!' })
+
+    next()
+}
+// verify trainer
+const verifyTrainer = async (req, res, next) => {
+    console.log('akhi trainer')
+    const user = req.user
+    const query = { email: user?.email }
+    const result = await usersCollection.findOne(query)
+    console.log(result?.role)
+    if (!result || result?.role !== 'trainer') {
+        return res.status(401).send({ message: 'unauthorized access!!' })
+    }
+
+    next()
 }
 
 
@@ -53,11 +80,12 @@ async function run() {
         const classCollection = client.db('ironFitness').collection('class')
         const trainerCollection = client.db('ironFitness').collection('trainers')
         const slotsCollection = client.db('ironFitness').collection('slots')
-        // const TrainerSlotCollection = client.db('ironFitness').collection('trainer-slots')
+        const slotCollection = client.db('ironFitness').collection('slot');
         const forumCollection = client.db('ironFitness').collection('forum')
         const reviewCollection = client.db('ironFitness').collection('review')
         const usersCollection = client.db('ironFitness').collection('users')
         const paymentCollection = client.db('ironFitness').collection('payment')
+        const feedBackCollection = client.db('ironFitness').collection('feedback')
 
         const subscribeCollection = client.db('ironFitness').collection('subscribers')
         // jwt token:
@@ -66,6 +94,7 @@ async function run() {
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '365d' });
             res.send({ token })
         })
+
         // Logout
         app.get('/logout', async (req, res) => {
             try {
@@ -81,65 +110,173 @@ async function run() {
                 res.status(500).send(err)
             }
         })
-
-        app.get('/slots', async (req, res) => {
+        // Send a ping to confirm a successful connection
+        app.get('/slot-slot', async (req, res) => {
             const result = await slotsCollection.find({
                 status: 'pending'
             }).toArray();
             res.send(result);
         })
+        // GET request to fetch applications based on user email
+        app.get('/api/slots/:email', async (req, res) => {
+            const email = req.params.email;
+            const slotsCollection = client.db('ironFitness').collection('slots');
+
+            try {
+                const applications = await slotsCollection.find({ email }).toArray();
+                res.status(200).json(applications);
+            } catch (error) {
+                console.error('Error fetching applications:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
+        // POST request to update application status
+        app.post('/api/slots/update-status/:id', async (req, res) => {
+            const id = req.params.id;
+            const { status, rejectionMessage } = req.body;
+            const slotsCollection = client.db('ironFitness').collection('slots');
+
+            try {
+                const filter = { _id: ObjectId(id) };
+                const updateDoc = {
+                    $set: {
+                        status,
+                        rejectionMessage,
+                    },
+                };
+                const result = await slotsCollection.updateOne(filter, updateDoc);
+
+                if (result.modifiedCount === 1) {
+                    res.status(200).json({ message: 'Application status updated successfully' });
+                } else {
+                    res.status(404).json({ error: 'Application not found' });
+                }
+            } catch (error) {
+                console.error('Error updating application status:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
+
+
+        // slots data  from data base
+        app.get('/slots', async (req, res) => {
+            try {
+                const result = await slotsCollection.find({ status: 'approved' }).toArray();
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch slots data", error });
+            }
+        });
+
+
         // save become trainer slots data to db
         app.post('/slots', async (req, res) => {
             const slot = req.body;
             const result = await slotsCollection.insertOne(slot)
             res.send(result);
         })
+        // feedback api
+        app.post('/feedback', async (req, res) => {
+            const slot = req.body;
+            const result = await feedBackCollection.insertOne(slot)
+            res.send(result);
+        })
+        app.get("/feedback/:email", async (req, res) => {
+            try {
+                const email = req.params.email;
+                const query = { email: email };
+                const result = await feedBackCollection.findOne(query);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "failed to data find by email", error });
+            }
+        });
+
+
+
+        // post data from slot collections
+        app.post('/slot', async (req, res) => {
+            const slot = req.body;
+            const result = await slotCollection.insertOne(slot)
+            res.send(result);
+        });
+
+        // get dat form slot collections
+        app.get('/slot', async (req, res) => {
+            const result = await slotCollection.find().toArray()
+            res.send(result)
+        });
+
+
+
+
+        //for details page
+        app.get('/slot/:id', async (req, res) => {
+            const id = req.params.id;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({ error: 'Invalid slot ID format' });
+            }
+            try {
+                const query = { _id: new ObjectId(id) };
+                const result = await slotsCollection.findOne(query);
+                if (!result) {
+                    return res.status(404).send({ error: 'Slot not found' });
+                }
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: 'Failed to fetch slot data', error });
+            }
+        });
+
+
+
         //Trainer slots 
         app.post('/trainers', async (req, res) => {
             const slot = req.body;
             const result = await trainerCollection.insertOne(slot)
             res.send(result);
         })
-        // get slot data form db
-        app.get("/slot/:email", async (req, res) => {
+        // Get slot data by email
+        app.get("/slot-email/:email", async (req, res) => {
             try {
                 const email = req.params.email;
-                const query = { email: email }
+                const query = { email: email };
                 const result = await slotsCollection.findOne(query);
                 res.send(result);
             } catch (error) {
                 res.status(500).send({ message: "Failed to fetch trainer slots data", error });
             }
         });
-<<<<<<< HEAD
+        // slot add by mail
+        app.get("/slot-add/:email", async (req, res) => {
+            try {
+                const email = req.params.email;
+                const query = { email: email }
+                const result = await slotCollection.findOne(query);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch trainer slots data", error });
+            }
+        });
+
+
         app.post("/slot/make-trainer/:email", async (req, res) => {
             try {
                 if (req.body.make_trainer) {
                     const email = req.params.email;
                     const query = { email: email }
-                    const tResult = await usersCollection.findOne(query);
-                    console.log(email)
-                    // const result = await slotsCollection.updateOne(query, {
-                    //     $set: { status: "approved" },
-                    // });
+                    const result = await slotsCollection.updateOne(query, {
+                        $set: { status: "approved" },
+                    });
                     // user role to trainer
                     const trainerQuery = { email: email }
-                    console.log('shahin')
                     const trainerResult = await usersCollection.updateOne(trainerQuery, {
                         $set: { role: "trainer" },
                     });
-=======
-        //slot data delete 
-        app.delete('/slot/:email', async (req, res) => {
-            const email = req.params.email
-            const query = { email: email }
-            const result = await slotsCollection.deleteOne(query)
-            res.send(result)
-        })
->>>>>>> a27302fe6fc41f9082bb3a1541a3d249f4217317
 
-
-                    res.send(trainerResult);
+                    res.send(result);
                 } else {
 
                 }
@@ -155,6 +292,27 @@ async function run() {
             const email = req.params.email
             const query = { email: email }
             const result = await slotsCollection.deleteOne(query)
+            res.send(result)
+        })
+        // Route to delete a slot by email
+        app.delete('/slot/:email', async (req, res) => {
+            try {
+                const { email } = req.params;
+                const result = await slotsCollection.deleteMany({ "info.email": email });
+                if (result.deletedCount > 0) {
+                    res.status(200).json({ status: 'success' });
+                } else {
+                    res.status(404).json({ status: 'failure', message: 'Email not found' });
+                }
+            } catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        });
+        //slots data get activity page from DB
+        app.get('/slots/:email', async (req, res) => {
+            const email = req.params.email
+            const query = { email: email }
+            const result = await slotsCollection.findOne(query)
             res.send(result)
         })
 
@@ -174,62 +332,101 @@ async function run() {
                 success: true,
                 message: 'demoted successfully'
             }).status(200)
-        })
-        //save user data in database
+        });
+
+
+
         app.put('/user', async (req, res) => {
             const user = req.body;
-            const query = { email: user?.email }
-            // check if user already in database
-            const isExist = await usersCollection.findOne(query);
-            if (isExist) {
-                if (user.status === 'Requested') {
-                    // if existing user try to change his role
-                    const result = await usersCollection.updateOne(query, {
-                        $set: { status: user?.status },
-                    })
-                    return res.send(result)
-                } else {
-                    // if existing user login again
-                    return res.send(isExist)
-                }
-            }
-            // save user for the first time
-            const options = { upsert: true }
-            const updateDoc = {
-                ...user,
-                Timestamp: Date.now()
+            const query = { email: user?.email };
 
+            try {
+                // Check if user already exists in the database
+                const existingUser = await usersCollection.findOne(query);
+
+                if (existingUser) {
+                    if (user.status === 'Requested') {
+                        // Update the user status if they request a status change
+                        const result = await usersCollection.updateOne(query, {
+                            $set: { status: user?.status },
+                        });
+                        return res.send(result);
+                    } else if (user.name) {
+                        // Update only non-role fields if the user logs in again and has a valid name
+                        const updateDoc = {
+                            $set: {
+                                name: user.name,
+                                status: user.status,
+                                Timestamp: Date.now(),
+                            },
+                        };
+                        const result = await usersCollection.updateOne(query, updateDoc);
+                        return res.send(result);
+                    } else {
+                        // If existing user logs in again and doesn't require an update, return their data
+                        return res.send(existingUser);
+                    }
+                } else {
+                    // If user doesn't exist in the database, insert them as a new entry
+                    if (user.name) {
+                        const newUser = {
+                            ...user,
+                            Timestamp: Date.now(),
+                        };
+                        const result = await usersCollection.insertOne(newUser);
+                        return res.send(result);
+                    } else {
+                        return res.status(400).send({ message: "Name cannot be null" });
+                    }
+                }
+            } catch (error) {
+                console.error("Error updating user:", error);
+                res.status(500).send({ message: "Internal server error", error });
             }
-            const result = await usersCollection.insertOne(updateDoc, options)
-            res.send(result)
-        })
+        });
+
+
+
         // get all user email from db.
         app.get('/user/:email', async (req, res) => {
             const email = req.params.email;
             const result = await usersCollection.findOne({ email });
             res.send(result);
-        })
+        });
+
         // get all users data from db
         app.get('/users', async (req, res) => {
             const result = await usersCollection.find().toArray()
             res.send(result)
-        })
+        });
+
+
         app.get('/users/trainer', async (req, res) => {
             const result = await usersCollection.find({
                 role: 'trainer'
             }).toArray()
             res.send(result)
         })
-        // Forum API 
-        app.get('/forum', async (req, res) => {
-            const result = await forumCollection.find().toArray();
-            res.send(result);
-        })
+
+
+
+
         //review related Api
         app.get('/review', async (req, res) => {
             const result = await reviewCollection.find().toArray();
             res.send(result);
         })
+        // review data post here to DB
+        app.post('/review', async (req, res) => {
+            try {
+                const { email, trainerId, review, rating, date, photoURL, displayName } = req.body;
+                const newReview = { email, trainerId, review, rating, date, photoURL, displayName };
+                const result = await reviewCollection.insertOne(newReview);
+                res.status(201).json(result);
+            } catch (error) {
+                res.status(500).json({ error: 'Failed to submit review' });
+            }
+        });
         // Save subscribe data in DB
         app.post("/subscribe", async (req, res) => {
             const subscriptionData = req.body;
@@ -252,21 +449,110 @@ async function run() {
         });
 
         // collect all class from database
-        app.get('/classes', async (req, res) => {
+        app.get('/class', async (req, res) => {
             const result = await classCollection.find().toArray();
             res.send(result)
         })
+        // collect all class from database
+        app.get('/class-home', async (req, res) => {
+            try {
+                const { page = 1, limit = 6 } = req.query;
+
+                // Convert page and limit to integers
+                const pageInt = parseInt(page);
+                const limitInt = parseInt(limit);
+
+                // Calculate the number of documents to skip
+                const skip = (pageInt - 1) * limitInt;
+
+                // Fetch the paginated results from the collection
+                const result = await classCollection.find().skip(skip).limit(limitInt).toArray();
+
+                // Get the total number of documents in the collection
+                const totalDocuments = await classCollection.countDocuments();
+
+                // Calculate the total number of pages
+                const totalPages = Math.ceil(totalDocuments / limitInt);
+
+                // Send the paginated results and metadata
+                res.send({
+                    totalDocuments,
+                    totalPages,
+                    currentPage: pageInt,
+                    limit: limitInt,
+                    data: result,
+                });
+            } catch (error) {
+                console.error("Error fetching paginated classes:", error);
+                res.status(500).send({ error: "An error occurred while fetching classes" });
+            }
+        });
+        // add new forum data:
+        app.post("/forum", async (req, res) => {
+            const ForumData = req.body;
+
+            try {
+                // Fetch user's role from the database
+                const user = await getUserByEmail(ForumData.email);
+
+                // Default to 'user' if the role is not found
+                const userRole = user ? user.role : "user";
+
+                // Ensure only 'admin' or 'trainer' roles can post to the forum
+                if (userRole === "admin" || userRole === "trainer") {
+                    const postWithRole = { ...ForumData, role: userRole };
+
+                    const result = await forumCollection.insertOne(postWithRole);
+                    res.send(result);
+                } else {
+                    res.status(403).send("Only admins and trainers are allowed to post in the forum.");
+                }
+            } catch (error) {
+                console.error('Error posting to forum:', error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+        async function getUserByEmail(email) {
+            try {
+                // Fetch user from the usersCollection
+                const user = await usersCollection.findOne({ email });
+                return user;
+            } catch (error) {
+                console.error('Error fetching user by email:', error);
+                return null;
+            }
+        }
+
+
+        // Get forum data form db
+        app.get("/forum", async (req, res) => {
+            const page = parseInt(req.query.page) || 1;
+            const limit = 6;
+            const skip = (page - 1) * limit;
+            const total = await forumCollection.countDocuments();
+            const forums = await forumCollection
+                .find()
+                .skip(skip)
+                .limit(limit)
+                .toArray();
+            res.send({ forums, total, page, pages: Math.ceil(total / limit) });
+        });
+
+
+
         // save add class data from database 
         app.post("/class", async (req, res) => {
             const ClassData = req.body;
             const result = await classCollection.insertOne(ClassData);
             res.send(result);
         });
+
         app.post("/pay-now", async (req, res) => {
-            const { trainer_info, trainer_id, slot_name, package_name, price, user_id, email, otherInfo } = req.body;
+            const { trainer_info, trainer_id, slot_name, package_name, price, user_id, email, displayName, photoURL } = req.body;
 
             // Validate data (add more validation as needed)
-            if (!trainer_info || !trainer_id || !slot_name || !package_name || !price || !email) {
+            if (!trainer_info || !trainer_id || !slot_name || !package_name || !price || !email || !displayName || !photoURL) {
                 return res.status(422).json({ error: 'Missing required fields' });
             }
 
@@ -279,6 +565,8 @@ async function run() {
                 price,
                 user_id,
                 email,
+                displayName,
+                photoURL,
                 created_at: new Date(),
             };
 
@@ -303,6 +591,13 @@ async function run() {
                 'result': true
             }).status(200);
         });
+        // get data from payment collection
+        app.get('/payment/:email', async (req, res) => {
+            const email = req.params.email;
+            const result = await paymentCollection.find({ email }).toArray();
+            res.send(result);
+        });
+
         // collect single class data from database
         app.get('/class/:id', async (req, res) => {
             const id = req.params.id;
@@ -344,11 +639,59 @@ async function run() {
 
             result.classLists = classList;
             res.send(result);
-        })
+        });
 
 
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
+
+        // Forum-related APIs
+        // Add a new forum post
+        app.post('/forum', verifiedToken, async (req, res) => {
+            try {
+                const user = req.decoded;
+                const { title, content } = req.body;
+                const newPost = {
+                    title,
+                    content,
+                    author: { email: user?.email, name: user?.name, role: user?.role },
+                    votes: { upvotes: 0, downvotes: 0 },
+                    createdAt: new Date()
+                };
+                const result = await forumCollection.insertOne(newPost);
+                res.status(201).send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to add forum post", error });
+            }
+        });
+
+        // Get forum posts with pagination
+        app.get("/forum", async (req, res) => {
+            const page = parseInt(req.query.page) || 1;
+            const limit = 6;
+            const skip = (page - 1) * limit;
+            const total = await forumCollection.countDocuments();
+            const forums = await forumCollection.find().skip(skip).limit(limit).toArray();
+            res.send({ forums, total, page, pages: Math.ceil(total / limit) });
+        });
+
+        // Upvote or downvote a forum post
+        app.post('/forum/vote', verifiedToken, async (req, res) => {
+            try {
+                const { postId, voteType } = req.body; // voteType can be 'upvote' or 'downvote'
+                const update = voteType === 'upvote' ? { $inc: { 'votes.upvotes': 1 } } : { $inc: { 'votes.downvotes': 1 } };
+                const result = await forumCollection.updateOne({ _id: new ObjectId(postId) }, update);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to vote on forum post", error });
+            }
+        });
+
+
+
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
+
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
